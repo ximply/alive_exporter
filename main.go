@@ -42,6 +42,9 @@ func process() string {
 	var psMap map[string]string
 	psMap = make(map[string]string)
 	for _, i := range l {
+		if len(i) < 2 {
+			continue
+		}
 		if _, ok := psMap[i]; ok {
 			continue
 		}
@@ -70,6 +73,9 @@ func listen() string {
 	var lsMap map[string]string
 	lsMap = make(map[string]string)
 	for _, i := range l {
+		if len(i) < 2 {
+			continue
+		}
 		if _, ok := lsMap[i]; ok {
 			continue
 		}
