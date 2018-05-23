@@ -23,9 +23,38 @@ var g_ret string
 var g_lock sync.RWMutex
 var doing bool
 
+func substr(str string, start, length int) string {
+	rs := []rune(str)
+	rl := len(rs)
+	end := 0
+
+	if start < 0 {
+		start = rl - 1 + start
+	}
+	end = start + length
+
+	if start > end {
+		start, end = end, start
+	}
+
+	if start < 0 {
+		start = 0
+	}
+	if start > rl {
+		start = rl
+	}
+	if end < 0 {
+		end = 0
+	}
+	if end > rl {
+		end = rl
+	}
+
+	return string(rs[start:end])
+}
 
 func process() string {
-	cmdStr := fmt.Sprintf("top -c -b -n 1 | sed '1,7d' | sed /^$/d | grep -v top | grep -v grep | grep -v ']' | awk '{print $12}' | awk -F ':' '{print $1}' | sort | awk -F '/' '{print $NF}' | grep -v awk | grep -v sed | grep -v sort | grep -v uniq")
+	cmdStr := fmt.Sprintf("ps -A -o cmd")
 	cmd := exec.Command("/bin/sh", "-c", cmdStr)
 	cmd.Wait()
 	out, err := cmd.Output()
@@ -42,14 +71,50 @@ func process() string {
 	var psMap map[string]string
 	psMap = make(map[string]string)
 	for _, i := range l {
-		if len(i) < 2 {
+		if len(i) < 2  {
 			continue
 		}
-		if _, ok := psMap[i]; ok {
+
+		if strings.HasPrefix(i, "[") {
 			continue
 		}
-		psMap[i] = i
-		ret = ret + fmt.Sprintf("alive{type=\"process\",pname=\"%s\"} 1\n", i)
+		if strings.HasPrefix(i, "-") {
+			continue
+		}
+		i = strings.Replace(i, "\"", "'", -1)
+		dl := strings.Split(i, " ")
+		args := strings.TrimLeft(i, dl[0])
+		args = strings.TrimLeft(args, " ")
+		cmd := dl[0]
+		cmd = strings.Replace(cmd, ":", "", 1)
+		idx := strings.LastIndex(cmd, "/")
+		if idx >= 0 {
+			cmd = substr(cmd, idx + 1, 128)
+		}
+		if len(dl) == 1 {
+			if _, ok := psMap[cmd]; ok {
+				continue
+			}
+			psMap[cmd] = cmd
+			ret = ret + fmt.Sprintf("alive{type=\"process\",pname=\"%s\",pargs=\"%s\"} 1\n",
+				cmd, "null")
+		} else {
+			if strings.Contains(i, ": ") {
+				if _, ok := psMap[cmd]; ok {
+					continue
+				}
+				psMap[cmd] = i
+				ret = ret + fmt.Sprintf("alive{type=\"process\",pname=\"%s\",pargs=\"%s\"} 1\n",
+					cmd, "null")
+			} else {
+				if _, ok := psMap[i]; ok {
+					continue
+				}
+				psMap[i] = i
+				ret = ret + fmt.Sprintf("alive{type=\"process\",pname=\"%s\",pargs=\"%s\"} 1\n",
+					cmd, args)
+			}
+		}
 	}
 
 	return ret
@@ -103,7 +168,7 @@ func doWork() {
 }
 
 func metrics(w http.ResponseWriter, r *http.Request) {
-    g_lock.RLock()
+	g_lock.RLock()
 	io.WriteString(w, g_ret)
 	g_lock.RUnlock()
 }
